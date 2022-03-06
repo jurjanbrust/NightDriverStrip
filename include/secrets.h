@@ -31,6 +31,6 @@
 // NOTE: do NOT enter your network details in this file (secrets.example.h)! 
 // Instead, copy this file to secrets.h, and set the below defines in that file!
 
-#define cszSSID       "Your SSID"
-#define cszPassword   "Your PASS"
-#define cszHostname   "NightDriverStrip"
+#define cszSSID       "Pretty Fly For A WIFI"
+#define cszPassword   "waaromweetikniet1"
+#define cszHostname   "LedStrip2"

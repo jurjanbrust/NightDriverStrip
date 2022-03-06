@@ -133,7 +133,9 @@
 // #define SOCKET_CORE             1
 // #define REMOTE_CORE             1
 
-#define DRAWING_CORE            0
+// Defines which process runs on core 0 or 1. Setting DRAWING_CORE to 0 can cause led-flickering during WiFi IO.
+
+#define DRAWING_CORE            1
 #define INCOMING_CORE           0
 #define NET_CORE                1
 #define AUDIO_CORE              1

@@ -6,3 +6,4 @@ src/uzlib/src/*.o
 include/secrets.h
 lib/*
 
+include/secrets.h
