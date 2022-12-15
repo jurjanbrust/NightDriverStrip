@@ -658,9 +658,27 @@ DRAM_ATTR LEDStripEffect *AllEffects[] =
         new ClassicFireEffect(true),
 
 #elif LEDSTRIP
-
-        new StatusEffect(CRGB::White)
-        //new PaletteEffect(RainbowColors_p)
+        //new BouncingBallEffect(), // niet mooi
+        //new StarryNightEffect<MusicStar>("RGB Music Blend Stars", RGBColors_p, 0.8, 1, NOBLEND, 15.0, 0.1, 10.0),      // RGB Music Blur - Can You Hear Me Knockin'
+        //new ColorCycleEffect(RightLeft),
+        //new TapeReelEffect("TapeReelEffect"),
+        //new PaletteReelEffect("PaletteReelEffect"),
+        // crashed new StarryNightEffect<MusicStar>("Rainbow Music Stars", RainbowColors_p, 2.0, 2, LINEARBLEND, 5.0, 0.0, 10.0), // Rainbow Music Star
+        //new MusicFireEffect(NUM_LEDS, 5, 5, 100, 3, NUM_LEDS),
+        //new InsulatorSpectrumEffect("Spectrum Effect", RainbowColors_p),
+        //new NewMoltenGlassOnVioletBkgnd("Molten Glass", RainbowColors_p),
+        //new LanternEffect(),
+        new ColorFillEffect(CRGB::White,1),
+        new ColorFillEffect(CRGB::Red,1),
+        new ColorFillEffect(CRGB::Green,1),
+        new ColorFillEffect(CRGB::Blue,1),
+        new ColorFillEffect(CRGB::Purple,1),
+        new ColorBeatOverRed("ColorBeatOverRed"),
+        new ColorBeatWithFlash("ColorBeatWithFlash"),
+        new ColorCycleEffect(LeftRight),
+        new BouncingBallEffect(4, false, true, 8),
+        new MeteorEffect(),                     // mooi
+        new FanBeatEffect("FanBeat"),           // random dots 
 
 #elif HOODORNAMENT
 

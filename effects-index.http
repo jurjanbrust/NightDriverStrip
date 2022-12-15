@@ -1,0 +1,1 @@
+POST http://192.168.1.253/setCurrentEffectIndex?currentEffectIndex=1

@@ -388,9 +388,9 @@ extern RemoteDebug Debug;           // Let everyone in the project know about it
     #define WAIT_FOR_WIFI           0   // Hold in setup until we have WiFi - for strips without effects
     #define TIME_BEFORE_LOCAL       2   // How many seconds before the lamp times out and shows local content
     #define ENABLE_WEBSERVER        1   // Turn on the internal webserver
-    #define ENABLE_NTP              1   // Set the clock from the web
-    #define ENABLE_OTA              0   // Accept over the air flash updates
-    #define ENABLE_REMOTE           1   // IR Remote Control
+    #define ENABLE_NTP              0   // Set the clock from the web
+    #define ENABLE_OTA              1  // Accept over the air flash updates
+    #define ENABLE_REMOTE           0   // IR Remote Control
     #define ENABLE_AUDIO            1   // Listen for audio from the microphone and process it
     
     #define DEFAULT_EFFECT_INTERVAL     (60*60*24*5)
@@ -663,24 +663,24 @@ extern RemoteDebug Debug;           // Let everyone in the project know about it
 #elif LEDSTRIP
 
     // The LED strips I use for Christmas lights under my eaves
-
     #define ENABLE_WIFI             1   // Connect to WiFi
+    #define ENABLE_WEBSERVER        1   // Turn on the internal webserver
     #define INCOMING_WIFI_ENABLED   1   // Accepting incoming color data and commands
     #define WAIT_FOR_WIFI           1   // Hold in setup until we have WiFi - for strips without effects
     #define TIME_BEFORE_LOCAL       5   // How many seconds before the lamp times out and shows local content
 
     #define NUM_CHANNELS    1
-    #define MATRIX_WIDTH    (8*144)       // My naximum run, and about all you can do at 30fps  
+    #define MATRIX_WIDTH    (600)       // jurjan=505, carmen=600
     #define MATRIX_HEIGHT   1
     #define NUM_LEDS        (MATRIX_WIDTH * MATRIX_HEIGHT)
     #define RESERVE_MEMORY  160000                // WiFi needs about 100K free to be able to (re)connect!
     #define ENABLE_REMOTE   0                     // IR Remote Control
-    #define ENABLE_AUDIO    0                     // Listen for audio from the microphone and process it
-    #define LED_PIN0        5
+    #define ENABLE_AUDIO    1                     // Listen for audio from the microphone and process it
+    #define LED_PIN0        14
 
     #define POWER_LIMIT_MW (INT_MAX)              // Unlimited power for long strips, up to you to limit here or supply enough!
 
-    #define DEFAULT_EFFECT_INTERVAL     (1000*20)    
+    #define DEFAULT_EFFECT_INTERVAL     (1000*20*1000)    // jjb: added * 1000 to extend 
 
     #define RING_SIZE_0 1 
     #define RING_SIZE_1 2
