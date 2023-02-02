@@ -41,29 +41,20 @@
 #include <memory>
 #include <vector>
 #include <math.h>
-#include "colorutils.h"
-#include "ledstripeffect.h"
+
 #include "effects/strip/misceffects.h"
 #include "effects/strip/fireeffect.h"
-#include "globals.h"
-#include "gfxbase.h"
-
-#include "ledmatrixgfx.h"
-//#include "effects/strip/misceffects.h"
-//#include "effects/strip/fireeffect.h"
-//#include "effects/strip/bouncingballeffect.h"
 
 #define MAX_EFFECTS 32
 
 extern uint8_t g_Brightness;
 extern uint8_t g_Fader;
 
-using namespace std;
-
 // References to functions in other C files
 
 void InitEffectsManager();
 std::shared_ptr<LEDStripEffect> GetSpectrumAnalyzer(CRGB color);
+std::shared_ptr<LEDStripEffect> GetSpectrumAnalyzer(CRGB color, CRGB color2);
 extern DRAM_ATTR std::shared_ptr<GFXBase> g_pDevices[NUM_CHANNELS];
 // EffectManager
 //
@@ -84,8 +75,8 @@ class EffectManager
     CRGB lastManualColor = CRGB::Red;
 
     std::unique_ptr<bool[]> _abEffectEnabled;
-    std::shared_ptr<GFXTYPE> *_gfx;
-    std::shared_ptr<LEDStripEffect> _pRemoteEffect;
+    std::shared_ptr<GFXTYPE> * _gfx;
+    std::shared_ptr<LEDStripEffect> _pRemoteEffect = nullptr;
 
 public:
     static const uint csFadeButtonSpeed = 15 * 1000;
@@ -102,7 +93,7 @@ public:
         debugV("EffectManager Constructor");
         _iCurrentEffect = 0;
         _effectStartTime = millis();
-        _abEffectEnabled = make_unique<bool[]>(cEffects);
+        _abEffectEnabled = std::make_unique<bool[]>(cEffects);
 
         for (int i = 0; i < cEffects; i++)
             EnableEffect(i);
@@ -165,46 +156,53 @@ public:
     void SetGlobalColor(CRGB color)
     {
         debugW("Setting Global Color");
-                
-#if (USEMATRIX)
+
         CRGB oldColor = lastManualColor;
         lastManualColor = color;
-        GFXBase * pMatrix = (*this)[0].get();
-        pMatrix->setPalette(CRGBPalette16(oldColor, color));
-        pMatrix->PausePalette(true);
-#else
-        std::shared_ptr<LEDStripEffect> effect;
 
-        if (color == CRGB(CRGB::White))
-            effect = make_shared<ColorFillEffect>(CRGB::White, 1);
+        #if (USEMATRIX)
+                GFXBase *pMatrix = (*this)[0].get();
+                pMatrix->setPalette(CRGBPalette16(oldColor, color));
+                pMatrix->PausePalette(true);
+        #else
+            std::shared_ptr<LEDStripEffect> effect;
+
+            if (color == CRGB(CRGB::White))
+                effect = std::make_shared<ColorFillEffect>(CRGB::White, 1);
         else
-#if ENABLE_AUDIO
-            effect = make_shared<MusicalPaletteFire>("Custom Fire", CRGBPalette256(CRGB::Black, color, CRGB::Yellow, CRGB::White), NUM_LEDS, 1, 8, 50, 1, 24, true, false);
-#else
-            effect = make_shared<PaletteFlameEffect>("Custom Fire", CRGBPalette256(CRGB::Black, color, CRGB::Yellow, CRGB::White), NUM_LEDS, 1, 8, 50, 1, 24, true, false);
-#endif
-        if (effect->Init(g_pDevices))
-        {
-            _pRemoteEffect = effect;
-            StartEffect();
-        }
-#endif
+
+            #if ENABLE_AUDIO
+                #if SPECTRUM
+                    effect = GetSpectrumAnalyzer(color, oldColor);
+                #else
+                    effect = std::make_shared<MusicalPaletteFire>("Custom Fire", CRGBPalette256(CRGB::Black, color, CRGB::Yellow, CRGB::White), NUM_LEDS, 1, 8, 50, 1, 24, true, false);
+                #endif
+            #else
+                effect = std::make_shared<PaletteFlameEffect>("Custom Fire", CRGBPalette256(CRGB::Black, color, CRGB::Yellow, CRGB::White), NUM_LEDS, 1, 8, 50, 1, 24, true, false);
+            #endif
+
+            if (effect->Init(g_pDevices))
+            {
+                _pRemoteEffect = effect;
+                StartEffect();
+            }
+        #endif
     }
 
     void ClearRemoteColor()
     {
         _pRemoteEffect = nullptr;
 
-#if (USEMATRIX)        
-        LEDMatrixGFX * pMatrix = (LEDMatrixGFX *)(*this)[0].get();
-        pMatrix->PausePalette(false);
-#endif        
+        #if (USEMATRIX)
+            LEDMatrixGFX *pMatrix = (LEDMatrixGFX *)(*this)[0].get();
+            pMatrix->PausePalette(false);
+        #endif
     }
 
     void StartEffect()
     {
         #if USEMATRIX
-            LEDMatrixGFX * pMatrix = (LEDMatrixGFX *)(*this)[0].get();
+            LEDMatrixGFX *pMatrix = (LEDMatrixGFX *)(*this)[0].get();
             pMatrix->SetCaption(_ppEffects[_iCurrentEffect]->FriendlyName(), 3000);
             pMatrix->setLeds(LEDMatrixGFX::GetMatrixBackBuffer());
         #endif
@@ -216,7 +214,7 @@ public:
 
         _effectStartTime = millis();
     }
-   
+
     void EnableEffect(size_t i)
     {
         if (i >= _cEffects)
@@ -309,7 +307,7 @@ public:
         return _ppEffects[_iCurrentEffect];
     }
 
-    const char *GetCurrentEffectName() const
+    const String & GetCurrentEffectName() const
     {
         if (_pRemoteEffect)
             return _pRemoteEffect->FriendlyName();
@@ -337,7 +335,7 @@ public:
 
         if (GetTimeUsedByCurrentEffect() > GetInterval())
             return 0;
-            
+
         return GetInterval() - GetTimeUsedByCurrentEffect();
     }
 
@@ -349,7 +347,7 @@ public:
     void CheckEffectTimerExpired()
     {
         // If interval is zero, the current effect never expires
-        
+
         if (_effectInterval == 0)
             return;
 
@@ -444,7 +442,7 @@ public:
         {
             _ppEffects[_iCurrentEffect]->Draw(); // Draw the currently active effect
         }
-        
+
         // If we do indeed have multiple effects (BUGBUG what if only a single enabled?) then we
         // fade in and out at the appropriate time based on the time remaining/used by the effect
 
@@ -457,7 +455,7 @@ public:
         if (_effectInterval == 0)
         {
             g_Fader = 255;
-            return;            
+            return;
         }
 
         int r = GetTimeRemainingForCurrentEffect();
@@ -478,3 +476,4 @@ public:
     }
 };
 
+extern std::unique_ptr<EffectManager<GFXBase>> g_pEffectManager;
