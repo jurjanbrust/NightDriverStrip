@@ -185,11 +185,11 @@
 
 #define DRAWING_CORE            1      // Must be core 1 or it doesn't run with SmartMatrix
 #define NET_CORE                0
-#define AUDIO_CORE              1
+#define AUDIO_CORE              0
 #define AUDIOSERIAL_CORE        0
 #define SCREEN_CORE             0
 #define DEBUG_CORE              0
-#define SOCKET_CORE             0
+#define SOCKET_CORE             1
 #define REMOTE_CORE             0
 
 #define FASTLED_INTERNAL            1   // Suppresses the compilation banner from FastLED
@@ -734,7 +734,7 @@ extern RemoteDebug Debug;           // Let everyone in the project know about it
     #define ENABLE_AUDIO    1                     // Listen for audio from the microphone and process it
     #define LED_PIN0        14
 
-    #define POWER_LIMIT_MW (INT_MAX)              // Unlimited power for long strips, up to you to limit here or supply enough!
+    #define POWER_LIMIT_MW (NUM_LEDS/32 * 1000)        // Assumes 32mA per LED.  Make sure you have appropriate power!
 
     #define DEFAULT_EFFECT_INTERVAL     (1000*20*1000)    // jjb: added * 1000 to extend 
 
