@@ -689,12 +689,13 @@ DRAM_ATTR LEDStripEffect *AllEffects[] =
         new ColorFillEffect(CRGB::Green,1),
         new ColorFillEffect(CRGB::Blue,1),
         new ColorFillEffect(CRGB::Purple,1),
-        new ColorBeatOverRed("ColorBeatOverRed"),
-        new ColorBeatWithFlash("ColorBeatWithFlash"),
+        //new ColorBeatOverRed("ColorBeatOverRed"),
+        //new ColorBeatWithFlash("ColorBeatWithFlash"),
         new ColorCycleEffect(LeftRight),
         new BouncingBallEffect(4, false, true, 8),
         new MeteorEffect(),                     // mooi
         new FanBeatEffect("FanBeat"),           // random dots 
+        new LaserLineEffect(500, 20),
 
 #elif HOODORNAMENT
 
