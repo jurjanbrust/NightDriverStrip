@@ -29,137 +29,70 @@
 //              
 //---------------------------------------------------------------------------
 
-#include "globals.h"                      // CONFIG and global headers
+#include "globals.h"
+// The SoundAnalyzer is present even when Audio is not defined, but it then a mere stub class
+// with a few stats fields. In the Audio case, it's the full class
+
+#if ENABLE_AUDIO
+    SoundAnalyzer g_Analyzer(INPUT_PIN);                    // Dummy stub class in non-audio case
+#else
+    SoundAnalyzer g_Analyzer;                               // Real AudioAnalyzer in audio case
+#endif
 
 #if ENABLE_AUDIO
 
-#include "soundanalyzer.h"
 #include <esp_task_wdt.h>
-#include "taskmgr.h"
 
-extern TaskManager g_TaskManager;
+
+extern NightDriverTaskManager g_TaskManager;
 extern DRAM_ATTR uint32_t g_FPS;          // Our global framerate
 extern uint32_t g_Watts; 
 extern double g_Brite;
-extern int g_serialFPS;                       // Frames per sec reported on serial
+extern DRAM_ATTR bool g_bUpdateStarted;                     // Has an OTA update started?
 
-float SampleBuffer::_oldVU;
-float SampleBuffer::_oldPeakVU;
-float SampleBuffer::_oldMinVU;
+float SoundAnalyzer::_oldVU;
+float SoundAnalyzer::_oldPeakVU;
+float SoundAnalyzer::_oldMinVU;
 
 float PeakData::_Min[NUM_BANDS] = { 0.0 };
 float PeakData::_Max[NUM_BANDS] = { 0.0 }; 
 float PeakData::_Last[NUM_BANDS] = { 0.0 }; 
 float PeakData::_allBandsMax = 1.0;
 
-// BUGBUG (Davepl) - Time to collect all of these into an Audio class, I'd say!
-
-float gScaler = 0.0f;                       // Instantaneous read of LED display vertical scaling
-float gLogScale = 1.0f;                     // How exponential the peaks are made to be
-volatile float gVURatio = 1.0;              // Current VU as a ratio to its recent min and max
-volatile float gVURatioFade = 1.0;          // Same as gVURatio but with a slow decay
-volatile float gVU = 0;                     // Instantaneous read of VU value
-volatile float gPeakVU = MAX_VU;            // How high our peak VU scale is in live mode
-volatile float gMinVU = 0;                  // How low our peak VU scale is in live mode
-volatile unsigned long g_cSamples = 0;      // Total number of samples successfully collected
-int g_AudioFPS = 0;                         // Framerate of the audio sampler
-int g_serialFPS = 0;                        // How many serial packets are processed per second
-
-unsigned long g_lastPeak1Time[NUM_BANDS] = { 0 } ;
-float g_peak1Decay[NUM_BANDS] = { 0 };
-float g_peak2Decay[NUM_BANDS] = { 0 };
-float g_peak1DecayRate = 1.0f;
-float g_peak2DecayRate = 1.0f;
-
-// Depending on how many bands have been defined, one of these tables will contain the frequency
-// cutoffs for that "size" of a spectrum display.  
-
-#if NUM_BANDS == 8
-    static int cutOffsBand [8] =
-    {
-        100, 250, 450, 565, 715, 900, 1125, 1500
-    };
-    static float scalarsBand[8] = 
-    {
-        0.1f, 0.2f, 0.3f, 0.3f, 0.4f, 0.5f, 0.6f, 0.75f
-    };
-#else
-    static_assert(NUM_BANDS <= 16);
-    const int cutOffsBand[16] =
-    {
-        25,   100, 200, 300, 400, 630, 800, 1000, 1200, 1600, 2500, 4000, 6300, 8000, 10000, 12000
-    };
-    #if TTGO    
-        const float scalarsBand[16] = 
-        {
-            0.05f, 0.15f, 0.2f, 0.225f, 0.25f, 0.3f, 0.35f, 0.4f, 0.425f, 0.6f, 0.7f, 0.8f, 0.8f, 0.9f, 1.0f, 1.0f
-        };
-    #else
-        const float scalarsBand[16] = 
-        {
-            #if M5STICKC || M5STICKCPLUS
-                0.15f, 0.25f, 0.35f, 0.45f, 0.6f, 0.6f, 0.6f, 0.6f, 0.6f, 0.6f, 0.7f, 0.8f, 0.8f, 0.9f, 1.0f, 0.75f
-            #else
-                0.20f, 0.25f, 0.30f, 0.35f, 0.45f, 0.45f, 0.50f, 0.6f, 0.45f, 0.5f, 0.5f, 0.6f, .80f, 1.0f, 1.0, 0.75f
-            #endif
-        };
-    #endif
-#endif
-
-
-// BandCutoffTable
-//
-// Depending on how many bands we have, returns the cutoffs of where those bands are in the spectrum
-
-const int * SampleBuffer::BandCutoffTable(int bandCount)                
-{
-    return cutOffsBand;
-}
-
-const float * SampleBuffer::GetBandScalars(int bandCount)
-{
-    return scalarsBand;     
-}
-
-PeakData g_Peaks;
-
-
 // AudioSamplerTaskEntry
 // A background task that samples audio, computes the VU, stores it for effect use, etc.
 
 void IRAM_ATTR AudioSamplerTaskEntry(void *)
 {
-     SoundAnalyzer Analyzer(INPUT_PIN);
 
     debugI(">>> Sampler Task Started");
 
     for (;;)
     {
         static uint64_t lastFrame = millis();
-        g_AudioFPS = FPS(lastFrame, millis());
+        g_Analyzer._AudioFPS = FPS(lastFrame, millis());
         static double lastVU = 0.0;
 
         // VURatio with a fadeout
 
         constexpr auto VU_DECAY_PER_SECOND = 3.0;
-        if (gVURatio > lastVU)
-            lastVU = gVURatio;
+        if (g_Analyzer._VURatio > lastVU)
+            lastVU = g_Analyzer._VURatio;
         else
             lastVU -= (millis() - lastFrame) / 1000.0 * VU_DECAY_PER_SECOND;
         lastVU = std::max(lastVU, 0.0);
         lastVU = std::min(lastVU, 2.0);
-        gVURatioFade = lastVU;
+        g_Analyzer._VURatioFade = lastVU;
 
         lastFrame = millis();
 
-        g_Peaks = Analyzer.RunSamplerPass();
-        UpdatePeakData();        
-        DecayPeaks();
+        g_Analyzer.RunSamplerPass();
+        g_Analyzer.UpdatePeakData();        
+        g_Analyzer.DecayPeaks();
 
         // Instantaneous VURatio
 
-        gVURatio = (gPeakVU == gMinVU) ? 0.0 : (gVU-gMinVU) / std::max(gPeakVU - gMinVU, (float) MIN_VU) * 2.0f;
-
+        g_Analyzer._VURatio = (g_Analyzer._PeakVU == g_Analyzer._MinVU) ? 0.0 : (g_Analyzer._VU-g_Analyzer._MinVU) / std::max(g_Analyzer._PeakVU - g_Analyzer._MinVU, (float) MIN_VU) * 2.0f;
 
         // Delay enough time to yield 25ms total used this frame, which will net 40FPS exactly (as long as the CPU keeps up)
 
@@ -205,11 +138,11 @@ class VICESocketServer
 {
 private:
 
-    int                    _port;
-    int                    _server_fd;
-    struct sockaddr_in     _address; 
-    unique_ptr<uint8_t []> _pBuffer;
-    unique_ptr<uint8_t []> _abOutputBuffer;
+    int                         _port;
+    int                         _server_fd;
+    struct sockaddr_in          _address; 
+    std::unique_ptr<uint8_t []> _pBuffer;
+    std::unique_ptr<uint8_t []> _abOutputBuffer;
 
     const int BUFFER_SIZE = 255;
 
@@ -222,7 +155,7 @@ public:
         _server_fd(0),
         _cbReceived(0)
     {
-        _abOutputBuffer = make_unique<uint8_t []>(BUFFER_SIZE);
+        _abOutputBuffer = std::make_unique<uint8_t []>(BUFFER_SIZE);
         memset(&_address, 0, sizeof(_address));
     }
 
@@ -240,7 +173,7 @@ public:
 
     bool begin()
     {
-        _pBuffer = make_unique<uint8_t []>(BUFFER_SIZE);
+        _pBuffer = std::make_unique<uint8_t []>(BUFFER_SIZE);
         _cbReceived = 0;
         
         // Creating socket file descriptor 
@@ -297,15 +230,6 @@ public:
             close(new_socket);
             return false;
         }
-        /*
-        int flag = 1;
-        if (setsockopt(new_socket,IPPROTO_TCP,TCP_NODELAY,&flag,sizeof(flag)) < 0)
-        {
-            debugW("Unable to set TCP_NODELAY on socket!");
-            close(new_socket);
-            return false;
-        }
-        */
         Serial.println("Accepted new VICE Client!");
         return new_socket;
     }
@@ -360,15 +284,16 @@ void IRAM_ATTR AudioSerialTaskEntry(void *)
             
         const int MAXPET = 16;                                      // Highest value that the PET can display in a bar
         data.header[0] = ((3 << 4) + 15);
-        data.vu = mapDouble(gVURatioFade, 0, 2, 1, 16);           // Convert VU to a 1-16 value
+        data.vu = mapDouble(g_Analyzer._VURatioFade, 0, 2, 1, 16);           // Convert VU to a 1-16 value
 
         // We treat 0 as a NUL terminator and so we don't want to send it in-band.  Since a band has to be 2 before
         // it is displayed, this has no effect on the display
 
         for (int i = 0; i < 8; i++)
         {
-            uint8_t low   = g_peak2Decay[i*2] * MAXPET;
-            uint8_t high  = g_peak2Decay[i*2+1] * MAXPET;
+            int iBand = map(i, 0, 7, 0, NUM_BANDS-2);
+            uint8_t low   = g_Analyzer.g_peak2Decay[iBand] * MAXPET;
+            uint8_t high  = g_Analyzer.g_peak2Decay[iBand+1] * MAXPET;
             data.peaks[i] = (high << 4) + low;
         }
 
@@ -378,7 +303,7 @@ void IRAM_ATTR AudioSerialTaskEntry(void *)
             Serial2.write((uint8_t *)&data, sizeof(data));
             //Serial2.flush(true);
             static int lastFrame = millis();
-            g_serialFPS = FPS(lastFrame, millis());
+            g_Analyzer._serialFPS = FPS(lastFrame, millis());
             lastFrame = millis();
         }
 

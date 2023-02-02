@@ -28,14 +28,15 @@
 //
 //---------------------------------------------------------------------------
 
-#include "globals.h"
-#include "network.h"
-#include "ledbuffer.h"
-#include "spiffswebserver.h"
-#include <mutex>
 #include <ArduinoOTA.h>             // Over-the-air helper object so we can be flashed via WiFi
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
+
+#include "globals.h"
+
+#if ENABLE_WEBSERVER
+    extern DRAM_ATTR CSPIFFSWebServer g_WebServer;
+#endif
 
 #if USE_WIFI_MANAGER
 #include <ESP_WiFiManager.h>
@@ -43,7 +44,6 @@ DRAM_ATTR ESP_WiFiManager g_WifiManager("NightDriverWiFi");
 #endif
 
 extern DRAM_ATTR std::unique_ptr<LEDBufferManager> g_apBufferManager[NUM_CHANNELS];
-extern DRAM_ATTR CSPIFFSWebServer g_WebServer;
 
 std::mutex g_buffer_mutex;
 
@@ -52,237 +52,86 @@ std::mutex g_buffer_mutex;
 // This is where we can add our own custom debugger commands
 
 extern AppTime  g_AppTime;
-extern double   g_BufferAgeOldest;
-extern double   g_BufferAgeNewest;
 extern uint32_t g_FPS;
-
-extern volatile float gVURatioFade;
-extern volatile float gVURatio;       // Current VU as a ratio to its recent min and max
-extern volatile float gVU;            // Instantaneous read of VU value
-extern volatile float gPeakVU;        // How high our peak VU scale is in live mode
-extern volatile float gMinVU;   
 
 // processRemoteDebugCmd
 // 
 // Callback function that the debug library (which exposes a little console over telnet and serial) calls
 // in order to allow us to add custom commands.  I've added a clock reset and stats command, for example.
 
-void processRemoteDebugCmd() 
-{
-    String str = Debug.getLastCommand();
-    if (str.equalsIgnoreCase("clock"))
+#if ENABLE_WIFI
+    void processRemoteDebugCmd() 
     {
-        debugI("Refreshing Time from Server...");
-
-        digitalWrite(BUILTIN_LED_PIN, 1);
-        NTPTimeClient::UpdateClockFromWeb(&g_Udp);
-        digitalWrite(BUILTIN_LED_PIN, 0);
-    }
-    else if (str.equalsIgnoreCase("stats"))
-    {
-        debugI("Displaying statistics....");
-
-        char szBuffer[256];
-        snprintf(szBuffer, ARRAYSIZE(szBuffer), "%s:%dx%d %dK\n", FLASH_VERSION_NAME, NUM_CHANNELS, NUM_LEDS, ESP.getFreeHeap() / 1024);
-        debugI("%s", szBuffer);
-
-
-        snprintf(szBuffer, ARRAYSIZE(szBuffer), "%sdB:%s\n", 
-                                                String(WiFi.RSSI()).substring(1).c_str(), 
-                                                WiFi.isConnected() ? WiFi.localIP().toString().c_str() : "None");
-        debugI("%s", szBuffer);
-
-        snprintf(szBuffer, ARRAYSIZE(szBuffer), "BUFR:%02d/%02d [%dfps]\n", g_apBufferManager[0]->Depth(), g_apBufferManager[0]->BufferCount(), g_FPS);
-        debugI("%s", szBuffer);
-
-        snprintf(szBuffer, ARRAYSIZE(szBuffer), "DATA:%+04.2lf-%+04.2lf\n", g_BufferAgeOldest, g_BufferAgeNewest);
-        debugI("%s", szBuffer);
-
-        snprintf(szBuffer, ARRAYSIZE(szBuffer), "CLCK:%.2lf\n", g_AppTime.CurrentTime());
-        debugI("%s", szBuffer);
-
-        #if ENABLE_AUDIO
-            snprintf(szBuffer, ARRAYSIZE(szBuffer), "gVU: %.2f, gMinVU: %.2f, gPeakVU: %.2f, gVURatio: %.2f", gVU, gMinVU, gPeakVU, gVURatio);
-            debugI("%s", szBuffer);
-        #endif
-
-        #if INCOMING_WIFI_ENABLED
-        snprintf(szBuffer, ARRAYSIZE(szBuffer), "Socket Buffer _cbReceived: %d", g_SocketServer._cbReceived);
-        debugI("%s", szBuffer);
-        #endif
-
-        // Print out a buffer log with timestamps and deltas 
-        
-        for (size_t i = 0; i < g_apBufferManager[0]->Depth(); i++)
+        String str = Debug.getLastCommand();
+        if (str.equalsIgnoreCase("clock"))
         {
-            auto pBufferManager = g_apBufferManager[0].get();
-            std::shared_ptr<LEDBuffer> pBuffer = (*pBufferManager)[i];
-            double t = pBuffer->Seconds() + (double) pBuffer->MicroSeconds() / MICROS_PER_SECOND;
-            snprintf(szBuffer, ARRAYSIZE(szBuffer), "Frame: %03d, Clock: %lf, Offset: %lf", i, t, g_AppTime.CurrentTime() - t);
-            debugI("%s", szBuffer);
+            debugI("Refreshing Time from Server...");
+
+            digitalWrite(BUILTIN_LED_PIN, 1);
+            NTPTimeClient::UpdateClockFromWeb(&g_Udp);
+            digitalWrite(BUILTIN_LED_PIN, 0);
         }
-
-    }
-}
-
-// RemoteLoopEntry
-//
-// If enabled, this is the main thread loop for the remote control.  It is intialized and then
-// called once every 20ms to pump its work queue and scan for new remote codes, etc.  If no
-// remote is being used, this code and thread doesn't exist in the build.
-
-#if ENABLE_REMOTE
-extern RemoteControl g_RemoteControl;
-
-void IRAM_ATTR RemoteLoopEntry(void *)
-{
-    debugI(">> RemoteLoopEntry\n");
-
-    g_RemoteControl.begin();
-    while (true)
-    {
-        g_RemoteControl.handle();
-        delay(50);        
-    }
-}
-#endif
-
-// ConnectToWiFi
-//
-// Connect to the pre-configured WiFi network.  
-//
-// BUGBUG I'm guessing this is exposed in all builds so anyone can call it and it just returns false if wifi
-// isn't being used, but do we need that?  If no one really needs to call it put the whole thing in the ifdef
-
-#define WIFI_RETRIES 5
-
-bool ConnectToWiFi(uint cRetries)
-{
-    #if !ENABLE_WIFI
-        return false;
-    #endif
-
-    debugI("Setting host name to %s...", cszHostname);
-
-#if USE_WIFI_MANAGER
-    g_WifiManager.setDebugOutput(true);
-    g_WifiManager.autoConnect("NightDriverWiFi");
-#else
-    for (uint iPass = 0; iPass < cRetries; iPass++)
-    {
-        Serial.printf("Pass %u of %u: Connecting to Wifi SSID: %s - ESP32 Free Memory: %u, PSRAM:%u, PSRAM Free: %u\n",
-            iPass, cRetries, cszSSID, ESP.getFreeHeap(), ESP.getPsramSize(), ESP.getFreePsram());
-
-        //WiFi.disconnect();
-        WiFi.begin(cszSSID, cszPassword);
-
-        for (uint i = 0; i < WIFI_RETRIES; i++)
+        else if (str.equalsIgnoreCase("stats"))
         {
-            if (WiFi.isConnected())
-            {
-                Serial.printf("Connected to AP with BSSID: %s\n", WiFi.BSSIDstr().c_str());
-                break;
-            }
-            else
-            {
-                delay(1000);
-            }
-        }
+            debugI("Displaying statistics....");
 
-        if (WiFi.isConnected())
-            break;
-    }
-#endif
+            char szBuffer[256];
+            snprintf(szBuffer, ARRAYSIZE(szBuffer), "%s:%dx%d %dK\n", FLASH_VERSION_NAME, NUM_CHANNELS, NUM_LEDS, ESP.getFreeHeap() / 1024);
+            debugI("%s", szBuffer);
 
-    if (false == WiFi.isConnected())
-    {
-        debugW("Giving up on WiFi\n");
-        return false;
-    }
-    debugW("Received IP: %s", WiFi.localIP().toString().c_str());
 
-    #if INCOMING_WIFI_ENABLED
-        // Start listening for incoming data
-        debugI("Starting/restarting Socket Server...");
-        g_SocketServer.release();
-        if (false == g_SocketServer.begin())
-            throw runtime_error("Could not start socket server!");
+            snprintf(szBuffer, ARRAYSIZE(szBuffer), "%sdB:%s\n", 
+                                                    String(WiFi.RSSI()).substring(1).c_str(), 
+                                                    WiFi.isConnected() ? WiFi.localIP().toString().c_str() : "None");
+            debugI("%s", szBuffer);
 
-        debugI("Socket server started.");
-    #endif
+            snprintf(szBuffer, ARRAYSIZE(szBuffer), "BUFR:%02d/%02d [%dfps]\n", g_apBufferManager[0]->Depth(), g_apBufferManager[0]->BufferCount(), g_FPS);
+            debugI("%s", szBuffer);
 
-    #if ENABLE_OTA
-        debugI("Publishing OTA...");
-        SetupOTA(cszHostname);
-    #endif
+            snprintf(szBuffer, ARRAYSIZE(szBuffer), "DATA:%+04.2lf-%+04.2lf\n", g_apBufferManager[0]->AgeOfOldestBuffer(), g_apBufferManager[0]->AgeOfNewestBuffer());
+            debugI("%s", szBuffer);
 
-    #if ENABLE_NTP
-        debugI("Setting Clock...");
-        NTPTimeClient::UpdateClockFromWeb(&g_Udp);
-    #endif
+            snprintf(szBuffer, ARRAYSIZE(szBuffer), "CLCK:%.2lf\n", g_AppTime.CurrentTime());
+            debugI("%s", szBuffer);
 
-    #if ENABLE_WEBSERVER
-        debugI("Starting Web Server...");
-        g_WebServer.begin();
-        debugI("Web Server begin called!");
-    #endif
+            #if ENABLE_AUDIO
+                snprintf(szBuffer, ARRAYSIZE(szBuffer), "g_Analyzer._VU: %.2f, g_Analyzer._MinVU: %.2f, g_Analyzer.g_Analyzer._PeakVU: %.2f, g_Analyzer.gVURatio: %.2f", g_Analyzer._VU, g_Analyzer._MinVU, g_Analyzer._PeakVU, g_Analyzer._VURatio);
+                debugI("%s", szBuffer);
+            #endif
 
-    #if USEMATRIX
-        //LEDStripEffect::mgraphics()->SetCaption(WiFi.localIP().toString().c_str(), 3000);
-    #endif
+            #if INCOMING_WIFI_ENABLEDgVUR
+            snprintf(szBuffer, ARRAYSIZE(szBuffer), "Socket Buffer _cbReceived: %d", g_SocketServer._cbReceived);
+            debugI("%s", szBuffer);
+            #endif
 
-    /*
-    {
-        WiFiClientSecure secClient;
-
-        secClient.setInsecure();
-
-        Serial.println("\nStarting secure connection to server...");
-        uint32_t start = millis();
-        int r = secClient.connect("google.com", 443, 5000);
-        Serial.printf("Connection took: %lums\n", millis()-start);
-        if(!r) 
-        {
-            Serial.println("Connection failed!");
-        } 
-        else 
-        {
-            Serial.println("Connected!  Sending GET!");
-            secClient.println("GET https://www.google.com/search?q=tsla+stock+quote HTTP/1.0");
-            secClient.println("Host: www.google.com");
-            secClient.println("Connection: close");
-            secClient.println();
+            // Print out a buffer log with timestamps and deltas 
             
-            while (secClient.connected()) 
+            for (size_t i = 0; i < g_apBufferManager[0]->Depth(); i++)
             {
-                String line = secClient.readStringUntil('\n');
-                secClient.printf("Data: %s", line.c_str());
-                if (line == "\r") {
-                    Serial.println("headers received");
-                    break;
-                }
+                auto pBufferManager = g_apBufferManager[0].get();
+                std::shared_ptr<LEDBuffer> pBuffer = (*pBufferManager)[i];
+                double t = pBuffer->Seconds() + (double) pBuffer->MicroSeconds() / MICROS_PER_SECOND;
+                snprintf(szBuffer, ARRAYSIZE(szBuffer), "Frame: %03d, Clock: %lf, Offset: %lf", i, t, g_AppTime.CurrentTime() - t);
+                debugI("%s", szBuffer);
             }
-        }
-        secClient.stop();
-    }
-    */
 
-    return true;
-}
+        }
+    }
+#endif
 
 // SetupOTA
 //
 // Set up the over-the-air programming info so that we can be flashed over WiFi
 
-void SetupOTA(const char *pszHostname)
+void SetupOTA(const String & strHostname)
 {
 #if ENABLE_OTA
     ArduinoOTA.setRebootOnSuccess(true);
 
-    if (nullptr == pszHostname)
+    if (strHostname.isEmpty())
         ArduinoOTA.setMdnsEnabled(false);
     else
-        ArduinoOTA.setHostname(pszHostname);
+        ArduinoOTA.setHostname(strHostname.c_str());
 
     ArduinoOTA
         .onStart([]() {
@@ -347,12 +196,163 @@ void SetupOTA(const char *pszHostname)
             {
                 debugW("End Failed");
             }
-            throw runtime_error("OTA Flash update failed.");
+            throw std::runtime_error("OTA Flash update failed.");
         });
 
     ArduinoOTA.begin();
 #endif
 }
+
+// RemoteLoopEntry
+//
+// If enabled, this is the main thread loop for the remote control.  It is intialized and then
+// called once every 20ms to pump its work queue and scan for new remote codes, etc.  If no
+// remote is being used, this code and thread doesn't exist in the build.
+
+#if ENABLE_REMOTE
+extern RemoteControl g_RemoteControl;
+
+void IRAM_ATTR RemoteLoopEntry(void *)
+{
+    debugI(">> RemoteLoopEntry\n");
+
+    g_RemoteControl.begin();
+    while (true)
+    {
+        g_RemoteControl.handle();
+        delay(50);        
+    }
+}
+#endif
+
+// ConnectToWiFi
+//
+// Connect to the pre-configured WiFi network.  
+
+#if ENABLE_WIFI
+
+    #define WIFI_RETRIES 5
+
+    bool ConnectToWiFi(uint cRetries)
+    {
+        // Already connected, Go no further.
+        if (WiFi.isConnected())
+        {
+            return true;
+        }
+        
+        debugI("Setting host name to %s...", cszHostname);
+
+    #if USE_WIFI_MANAGER
+        g_WifiManager.setDebugOutput(true);
+        g_WifiManager.autoConnect("NightDriverWiFi");
+    #else
+        for (uint iPass = 0; iPass < cRetries; iPass++)
+        {
+            Serial.printf("Pass %u of %u: Connecting to Wifi SSID: %s - ESP32 Free Memory: %u, PSRAM:%u, PSRAM Free: %u\n",
+                iPass, cRetries, cszSSID, ESP.getFreeHeap(), ESP.getPsramSize(), ESP.getFreePsram());
+
+            //WiFi.disconnect();
+            WiFi.begin(cszSSID, cszPassword);
+
+            for (uint i = 0; i < WIFI_RETRIES; i++)
+            {
+                if (WiFi.isConnected())
+                {
+                    Serial.printf("Connected to AP with BSSID: %s\n", WiFi.BSSIDstr().c_str());
+                    break;
+                }
+                else
+                {
+                    delay(1000);
+                }
+            }
+
+            if (WiFi.isConnected()) {
+                break;
+            } 
+        }
+    #endif
+        // Additional Services onwwards reliant on network so close if not up.
+        if (false == WiFi.isConnected())
+        {
+            debugW("Giving up on WiFi\n");
+            return false;
+        }
+        debugW("Received IP: %s", WiFi.localIP().toString().c_str());
+
+        #if INCOMING_WIFI_ENABLED
+            // Start listening for incoming data
+            debugI("Starting/restarting Socket Server...");
+            g_SocketServer.release();
+            if (false == g_SocketServer.begin())
+                throw std::runtime_error("Could not start socket server!");
+
+            debugI("Socket server started.");
+        #endif
+
+        #if ENABLE_OTA
+            debugI("Publishing OTA...");
+            SetupOTA(String(cszHostname));
+        #endif
+
+        #if ENABLE_NTP
+            debugI("Setting Clock...");
+            NTPTimeClient::UpdateClockFromWeb(&g_Udp);
+        #endif
+
+        #if ENABLE_WEBSERVER
+            debugI("Starting Web Server...");
+            g_WebServer.begin();
+            debugI("Web Server begin called!");
+        #endif
+
+        #if USEMATRIX
+            //LEDStripEffect::mgraphics()->SetCaption(WiFi.localIP().toString().c_str(), 3000);
+        #endif
+
+        /*
+        {
+            WiFiClientSecure secClient;
+
+            secClient.setInsecure();
+
+            Serial.println("\nStarting secure connection to server...");
+            uint32_t start = millis();
+            int r = secClient.connect("google.com", 443, 5000);
+            Serial.printf("Connection took: %lums\n", millis()-start);
+            if(!r) 
+            {
+                Serial.println("Connection failed!");
+            } 
+            else 
+            {
+                Serial.println("Connected!  Sending GET!");
+                secClient.println("GET https://www.google.com/search?q=tsla+stock+quote HTTP/1.0");
+                secClient.println("Host: www.google.com");
+                secClient.println("Connection: close");
+                secClient.println();
+                
+                while (secClient.connected()) 
+                {
+                    String line = secClient.readStringUntil('\n');
+                    secClient.printf("Data: %s", line.c_str());
+                    if (line == "\r") {
+                        Serial.println("headers received");
+                        break;
+                    }
+                }
+            }
+            secClient.stop();
+        }
+        */
+
+        return true;
+    }
+    
+#endif
+
+
 
 // ProcessIncomingData
 //
@@ -397,7 +397,7 @@ bool ProcessIncomingData(uint8_t *payloadData, size_t payloadLength)
             // Go through the channel mask to see which bits are set in the channel16 specifier, and send the data to each and every
             // channel that matches the mask.  So if the send channel 7, that means the lowest 3 channels will be set.
 
-            lock_guard<mutex> guard(g_buffer_mutex);
+            std::lock_guard<std::mutex> guard(g_buffer_mutex);
 
             //if (!heap_caps_check_integrity_all(true))
             //    debugW("### Corrupt heap detected in WIFI_COMMAND_PIXELDATA64");
@@ -417,7 +417,6 @@ bool ProcessIncomingData(uint8_t *payloadData, size_t payloadLength)
                             debugV("Updating existing buffer");
                             if (!pNewestBuffer->UpdateFromWire(payloadData, payloadLength))
                                 return false;
-                            g_apBufferManager[iChannel]->UpdateOldestAndNewest();
                             bDone = true;
                         }
                     }
@@ -427,41 +426,9 @@ bool ProcessIncomingData(uint8_t *payloadData, size_t payloadLength)
                         auto pNewBuffer = g_apBufferManager[iChannel]->GetNewBuffer();
                         if (!pNewBuffer->UpdateFromWire(payloadData, payloadLength))
                             return false;
-                        g_apBufferManager[iChannel]->UpdateOldestAndNewest();
                     }
                 }
             }
-            return true;
-        }
-
-        case WIFI_COMMAND_VU:
-        {
-            debugW("Deprecated WIFI_COMMAND_VU received.");
-            uint32_t vu32 = payloadData[5] << 24 | payloadData[4] << 16 | payloadData[3] << 8 | payloadData[2];
-            debugV("Incoming VU: %u", vu32);
-            return true;
-        }
-
-        // WIFI_COMMAND_CLOCK
-        //
-        // Allows the server to send its current timeofday clock; if it's newer than our clock, we update ours
-
-        case WIFI_COMMAND_CLOCK:
-        {
-            debugW("Deprecated WIFI_COMMAND_CLOCK received.");
-            if (payloadLength != WIFI_COMMAND_CLOCK_SIZE)
-            {
-                debugW("Incorrect packet size for clock command received.  Expected %d and got %d\n", WIFI_COMMAND_CLOCK_SIZE, payloadLength);
-                return false;
-            }
-
-            uint16_t channel16    = payloadData[3]  << 8  | payloadData[2];
-
-            if (channel16 != 0)
-            {
-                debugW("Nonzero channel for clock not currently supported, but received: %d\n", channel16);
-            }
-
             return true;
         }
 
