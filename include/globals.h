@@ -405,7 +405,7 @@ extern RemoteDebug Debug;           // Let everyone in the project know about it
     #define ENABLE_REMOTE           0   // IR Remote Control
     #define ENABLE_AUDIO            1   // Listen for audio from the microphone and process it
     
-    #define DEFAULT_EFFECT_INTERVAL     (60*60*24*5)
+    #define DEFAULT_EFFECT_INTERVAL     (60*60*24*50)
 
     #if SPECTRUM_WROVER_KIT
         #define LED_PIN0        5
