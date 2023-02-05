@@ -517,17 +517,26 @@ DRAM_ATTR LEDStripEffect *AllEffects[] =
         new SpectrumAnalyzerEffect("Spectrum Standard", true, 48, CRGB(0,0,5), 0, 0, 1.25, 1.25),         // 1 breed, blauw
         new SpectrumAnalyzerEffect("Spectrum Standard", true, 48, CRGB(0,5,0), 0, 0, 1.25, 1.25),         // 1 breed, groen
         new SpectrumAnalyzerEffect("Spectrum Standard", true, 48, CRGB(5,0,0), 0, 0, 1.25, 1.25),         // 1 breed, rood
+        new SpectrumAnalyzerEffect("Spectrum Standard", true, 48, CRGB(5,0,5), 0, 0, 1.25, 1.25),         // 1 breed, rood
+        new SpectrumAnalyzerEffect("Spectrum Standard", true, 48, CRGB(5,5,0), 0, 0, 1.25, 1.25),         // 1 breed, rood
 
-        new SpectrumAnalyzerEffect("Spectrum Fade", true, 48, BlueColors_p, 50, 0, 1.0, 1.25),           // 2 breed fade
-        new SpectrumAnalyzerEffect("Spectrum Fade", true, 48, RedColors_p, 50, 0, 1.0, 1.25),            // 2 breed fade
-        new SpectrumAnalyzerEffect("Spectrum Fade", true, 48, GreenColors_p, 50, 0, 1.0, 1.25),          // 2 breed fade
+        new SpectrumAnalyzerEffect("Spectrum Fade", true, 48, CRGB(0,0,40), 50, 0, 1.0, 1.25),           // 2 breed fade
+        new SpectrumAnalyzerEffect("Spectrum Fade", true, 48, CRGB(0,40,0), 50, 0, 1.0, 1.25),            // 2 breed fade
+        new SpectrumAnalyzerEffect("Spectrum Fade", true, 48, CRGB(40,0,0), 50, 0, 1.0, 1.25),          // 2 breed fade
+        new SpectrumAnalyzerEffect("Spectrum Fade", true, 48, CRGB(40,0,40), 50, 0, 1.0, 1.25),          // 2 breed fade
+        new SpectrumAnalyzerEffect("Spectrum Fade", true, 48, CRGB(40,40,0), 50, 0, 1.0, 1.25),          // 2 breed fade
+        
+        new SpectrumAnalyzerEffect("Spectrum Fade", true, 48, CRGB(0,0,255), 50, 0, 1.0, 1.25),           // 2 breed fade
+        new SpectrumAnalyzerEffect("Spectrum Fade", true, 48, CRGB(0,255,0), 50, 0, 1.0, 1.25),            // 2 breed fade
+        new SpectrumAnalyzerEffect("Spectrum Fade", true, 48, CRGB(255,0,0), 50, 0, 1.0, 1.25),          // 2 breed fade
+        new SpectrumAnalyzerEffect("Spectrum Fade", true, 48, CRGB(255,0,255), 50, 0, 1.0, 1.25),          // 2 breed fade
+        new SpectrumAnalyzerEffect("Spectrum Fade", true, 48, CRGB(255,255,0), 50, 0, 1.0, 1.25),          // 2 breed fade
 
-        new SpectrumAnalyzerEffect("Spectrum Standard", true, 48, CRGB(0,0,5), 50, 70, -1.0, 2.0),            // 1 breed, blauw
-        new SpectrumAnalyzerEffect("Spectrum Standard", true, 48, CRGB(0,5,0), 50, 70, -1.0, 2.0),            // 1 breed, groen
-        new SpectrumAnalyzerEffect("Spectrum Standard", true, 48, CRGB(5,0,0), 50, 70, -1.0, 2.0),            // 1 breed, rood
+        new SpectrumAnalyzerEffect("Spectrum Standard", true, 48, CRGB(0,0,15), 20, 40, -1.0, 2.0),            // 1 breed, blauw
+        new SpectrumAnalyzerEffect("Spectrum Standard", true, 48, CRGB(0,15,0), 20, 40, -1.0, 2.0),            // 1 breed, groen
+        new SpectrumAnalyzerEffect("Spectrum Standard", true, 48, CRGB(15,0,0), 20, 40, -1.0, 2.0),            // 1 breed, rood
 
         new SpectrumAnalyzerEffect("Spectrum Standard", true, 48, RainbowColors_p, 0, 0, 1.25, 1.25),     // 1 breed, rainbow
-
         new SpectrumAnalyzerEffect("Spectrum Standard", true, 24, spectrumAltColors, 0, 0, 1.25, 1.25),   // 2 breed 
 
         new SpectrumAnalyzerEffect("Spectrum Fade", true, 24, RainbowColors_p, 50, 70, -1.0, 2.0),        // 2 breed fade
