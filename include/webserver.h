@@ -1,6 +1,6 @@
 //+--------------------------------------------------------------------------
 //
-// File:        SPIFFSWebServer.h
+// File:        webserver.h
 //
 // NightDriverStrip - (c) 2018 Plummer's Software LLC.  All Rights Reserved.  
 //
@@ -22,8 +22,8 @@
 //
 // Description:
 //
-//   Web server that fulfills requests by serving them from the SPIFFS
-//   storage in flash.  Requires the espressif-esp32 WebServer class.
+//   Web server that fulfills requests by serving them from statically
+//   files in flash.  Requires the espressif-esp32 WebServer class.
 //
 //   This class contains an early attempt at exposing a REST api for
 //   adjusting effect paramters.  I'm in no way attached to it and it
@@ -33,7 +33,7 @@
 //
 // History:     Jul-12-2018         Davepl      Created
 //              Apr-29-2019         Davepl      Adapted from BigBlueLCD project
-//
+//              Feb-02-2023         LouisRiel   Removed SPIFF served files with statically linked files
 //---------------------------------------------------------------------------
 
 #pragma once
@@ -42,7 +42,6 @@
 #include <FS.h>
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
-#include <SPIFFS.h>
 #include <Arduino.h>
 #include <AsyncJson.h>
 #include <ArduinoJson.h>
@@ -50,7 +49,23 @@
 #define JSON_BUFFER_BASE_SIZE 2048
 #define JSON_BUFFER_INCREMENT 2048
 
-class CSPIFFSWebServer
+struct EmbeddedFile 
+{
+    // Embedded file size in bytes
+    const size_t length;
+    // Contents as bytes
+    const uint8_t *const contents;
+    // Added to hold the file's MIME type, but could be used for other type types, if desired
+    const char *const type; 
+
+    EmbeddedFile(const uint8_t start[], const uint8_t end[], const char type[]) :
+        length(end - start),
+        contents(start),
+        type(type)
+    {}
+};
+
+class CWebServer
 {
   private:
 
@@ -58,7 +73,7 @@ class CSPIFFSWebServer
 
   public:
 
-    CSPIFFSWebServer()
+    CWebServer()
         : _server(80)
     {
     }
@@ -80,47 +95,46 @@ class CSPIFFSWebServer
     {
         static size_t jsonBufferSize = JSON_BUFFER_BASE_SIZE;
         bool bufferOverflow;
-        std::unique_ptr<AsyncJsonResponse> response;
-
-        debugI("GetEffectListText");
+        debugV("GetEffectListText");
 
         do {
             bufferOverflow = false;
-            response = std::make_unique<AsyncJsonResponse>(false, jsonBufferSize);
+            auto response = new AsyncJsonResponse(false, jsonBufferSize);
             response->addHeader("Server","NightDriverStrip");
             auto j = response->getRoot();
 
-            j["currentEffect"]         = g_pEffectManager->GetCurrentEffectIndex();
-            j["millisecondsRemaining"] = g_pEffectManager->GetTimeRemainingForCurrentEffect();
-            j["effectInterval"]        = g_pEffectManager->GetInterval();
-            j["enabledCount"]          = g_pEffectManager->EnabledCount();
+            j["currentEffect"]         = g_aptrEffectManager->GetCurrentEffectIndex();
+            j["millisecondsRemaining"] = g_aptrEffectManager->GetTimeRemainingForCurrentEffect();
+            j["effectInterval"]        = g_aptrEffectManager->GetInterval();
+            j["enabledCount"]          = g_aptrEffectManager->EnabledCount();
 
-            for (int i = 0; i < g_pEffectManager->EffectCount(); i++) { 
+            for (int i = 0; i < g_aptrEffectManager->EffectCount(); i++) { 
                 DynamicJsonDocument effectDoc(256);
-                effectDoc["name"]    = g_pEffectManager->EffectsList()[i]->FriendlyName();
-                effectDoc["enabled"] = g_pEffectManager->IsEffectEnabled(i);
+                effectDoc["name"]    = g_aptrEffectManager->EffectsList()[i]->FriendlyName();
+                effectDoc["enabled"] = g_aptrEffectManager->IsEffectEnabled(i);
 
                 if (!j["Effects"].add(effectDoc)) {
                     bufferOverflow = true;
                     jsonBufferSize += JSON_BUFFER_INCREMENT;
+                    delete response;
                     debugV("JSON reponse buffer overflow! Increased buffer to %zu bytes", jsonBufferSize);
                     break;
                 }
             }       
-        } while (bufferOverflow);
 
-        response->addHeader("Access-Control-Allow-Origin", "*");
-        response->setLength();
-        pRequest->send(response.get());
+            response->addHeader("Access-Control-Allow-Origin", "*");
+            response->setLength();
+            pRequest->send(response);
+        } while (bufferOverflow);
     }
 
     void GetStatistics(AsyncWebServerRequest * pRequest)
     {
         static size_t jsonBufferSize = JSON_BUFFER_BASE_SIZE;
 
-        debugI("GetStatistics");
+        debugV("GetStatistics");
 
-        auto response = std::make_unique<AsyncJsonResponse>(false, jsonBufferSize);
+        auto response = new AsyncJsonResponse(false, JSON_BUFFER_BASE_SIZE);
         response->addHeader("Server","NightDriverStrip");
         auto j = response->getRoot();
 
@@ -153,24 +167,24 @@ class CSPIFFSWebServer
         j["CPU_USED_CORE0"]        = g_TaskManager.GetCPUUsagePercent(0);
         j["CPU_USED_CORE1"]        = g_TaskManager.GetCPUUsagePercent(1);
 
-        response->addHeader("Access-Control-Allow-Origin", "*");
         response->setLength();
-        pRequest->send(response.get());
+        response->addHeader("Access-Control-Allow-Origin", "*");
+        pRequest->send(response);
     }    
 
     void SetSettings(AsyncWebServerRequest * pRequest)
     {
-        debugI("SetSettings");
+        debugV("SetSettings");
 
         // Look for the parameter by name
         const String strEffectInterval = "effectInterval";
         if (pRequest->hasParam(strEffectInterval, true, false))
         {
-            debugI("found EffectInterval");
+            debugV("found EffectInterval");
             // If found, parse it and pass it off to the EffectManager, who will validate it
             AsyncWebParameter * param = pRequest->getParam(strEffectInterval, true, false);
             size_t effectInterval = strtoul(param->value().c_str(), NULL, 10);  
-            g_pEffectManager->SetInterval(effectInterval);
+            g_aptrEffectManager->SetInterval(effectInterval);
         }       
         // Complete the response so the client knows it can happily proceed now
         AddCORSHeaderAndSendOKResponse(pRequest);   
@@ -178,7 +192,7 @@ class CSPIFFSWebServer
 
     void SetCurrentEffectIndex(AsyncWebServerRequest * pRequest)
     {
-        debugI("SetCurrentEffectIndex");
+        debugV("SetCurrentEffectIndex");
 
         /*
         AsyncWebParameter * param = pRequest->getParam(0);
@@ -202,7 +216,7 @@ class CSPIFFSWebServer
             // If found, parse it and pass it off to the EffectManager, who will validate it
             AsyncWebParameter * param = pRequest->getParam(strCurrentEffectIndex, true);
             size_t currentEffectIndex = strtoul(param->value().c_str(), NULL, 10);  
-            g_pEffectManager->SetCurrentEffectIndex(currentEffectIndex);
+            g_aptrEffectManager->SetCurrentEffectIndex(currentEffectIndex);
         }
         // Complete the response so the client knows it can happily proceed now
         AddCORSHeaderAndSendOKResponse(pRequest);   
@@ -210,7 +224,7 @@ class CSPIFFSWebServer
 
     void EnableEffect(AsyncWebServerRequest * pRequest)
     {
-        debugI("EnableEffect");
+        debugV("EnableEffect");
 
         // Look for the parameter by name
         const String strEffectIndex = "effectIndex";
@@ -219,7 +233,7 @@ class CSPIFFSWebServer
             // If found, parse it and pass it off to the EffectManager, who will validate it
             AsyncWebParameter * param = pRequest->getParam(strEffectIndex, true);
             size_t effectIndex = strtoul(param->value().c_str(), NULL, 10); 
-            g_pEffectManager->EnableEffect(effectIndex);
+            g_aptrEffectManager->EnableEffect(effectIndex);
         }
         // Complete the response so the client knows it can happily proceed now
         AddCORSHeaderAndSendOKResponse(pRequest);   
@@ -227,7 +241,7 @@ class CSPIFFSWebServer
 
     void DisableEffect(AsyncWebServerRequest * pRequest)
     {
-        debugI("DisableEffect");
+        debugV("DisableEffect");
 
         // Look for the parameter by name
         const String strEffectIndex = "effectIndex";
@@ -236,7 +250,7 @@ class CSPIFFSWebServer
             // If found, parse it and pass it off to the EffectManager, who will validate it
             AsyncWebParameter * param = pRequest->getParam(strEffectIndex, true);
             size_t effectIndex = strtoul(param->value().c_str(), NULL, 10); 
-            g_pEffectManager->DisableEffect(effectIndex);
+            g_aptrEffectManager->DisableEffect(effectIndex);
             debugV("Disabled Effect %d", effectIndex);
         }
         // Complete the response so the client knows it can happily proceed now
@@ -245,61 +259,57 @@ class CSPIFFSWebServer
 
     void NextEffect(AsyncWebServerRequest * pRequest)
     {
-        debugI("NextEffect");
-        g_pEffectManager->NextEffect();
+        debugV("NextEffect");
+        g_aptrEffectManager->NextEffect();
         AddCORSHeaderAndSendOKResponse(pRequest);
     }
 
     void PreviousEffect(AsyncWebServerRequest * pRequest)
     {
-        debugI("PreviousEffect");
-        g_pEffectManager->PreviousEffect();
+        debugV("PreviousEffect");
+        g_aptrEffectManager->PreviousEffect();
         AddCORSHeaderAndSendOKResponse(pRequest);
     }
 
-    // begin - register page load handlers and start serving pages
+    // This registers a handler for GET requests for one of the known files embedded in the firmware. It uses
+    // chunked I/O for all files; that way AsyncWebServer can figure out what an appropriate chunk size is, and we
+    // can update (read: grow) embedded files without having to consider if we crossed the "chunked I/O" boundary.
 
-    // The default method of fulfilling a file doesn't work on large files because it tries to hold
-    // the entire thing in RAM, and it chokes.  So, for files that are too large to serve from RAM, 
-    // I use this function.  It registers a file-specific handler and then does chunk based IO.
-    
-    void ServeLargeStaticFile(const char strName[], const char strType[])
+    void ServeEmbeddedFile(const char strUri[], EmbeddedFile &file)
     {
-       _server.on(strName, HTTP_GET, [strName, strType](AsyncWebServerRequest *request)
+        _server.on(strUri, HTTP_GET, [strUri, file](AsyncWebServerRequest *request)
         {
-            Serial.printf("GET for: %s\n", strName);
-            fs::File SPIFFSfile = SPIFFS.open(strName, FILE_READ);
-            if (SPIFFSfile)
-            {
-                Serial.printf("[HTTP]\tOpening [%d]\r\n", SPIFFSfile);
-            } 
-            else 
-            {
-                Serial.printf("[HTTP]\tSPIFFS File DOESN'T exists [%d] <<< ERROR !!!\r\n", SPIFFSfile);
-            }
+            Serial.printf("GET for: %s\n", strUri);
             AsyncWebServerResponse *response = 
-                request->beginChunkedResponse(strType, [SPIFFSfile](uint8_t *buffer, size_t maxLen, size_t index) -> size_t 
+                request->beginChunkedResponse(file.type, [file](uint8_t *buffer, size_t maxLen, size_t index) -> size_t 
                 {
-                    auto localHandle = SPIFFSfile;
-                    //Serial.printf("[HTTP]  [%6d]    INDEX [%6d]    BUFFER_MAX_LENGTH [%6d]\r\n", index, localHandle.size(), maxLen);
-                    size_t len = localHandle.read(buffer, maxLen);
-                    //Serial.printf(">> Succcessful read of %d\n", len);
-                    if (len == 0)
-                    {
-                        //Serial.printf("Closing [%d]\n", SPIFFSfile);
-                        //localHandle.close();
-                    }
-                    return len;
+                    if (index >= file.length)
+                        return 0;
+
+                    size_t writeBytes = min(file.length - index, maxLen);
+
+                    memcpy(buffer, file.contents + index, writeBytes);
+
+                    return writeBytes;
                 }
             );
+
             request->send(response);
         });
-    }    
+    }
 
+    // begin - register page load handlers and start serving pages
     void begin()
     {
-        debugI("Connecting Web Endpoints");
+        extern const uint8_t html_start[] asm("_binary_site_index_html_start");
+        extern const uint8_t html_end[] asm("_binary_site_index_html_end");
+        extern const uint8_t jsx_start[] asm("_binary_site_main_jsx_start");
+        extern const uint8_t jsx_end[] asm("_binary_site_main_jsx_end");
+        extern const uint8_t ico_start[] asm("_binary_site_favicon_ico_start");
+        extern const uint8_t ico_end[] asm("_binary_site_favicon_ico_end");
         
+        debugI("Connecting Web Endpoints");
+
         _server.on("/getEffectList",         HTTP_GET, [this](AsyncWebServerRequest * pRequest) { this->GetEffectListText(pRequest); });
         _server.on("/getStatistics",         HTTP_GET, [this](AsyncWebServerRequest * pRequest) { this->GetStatistics(pRequest); });
         _server.on("/nextEffect",            HTTP_POST, [this](AsyncWebServerRequest * pRequest)    { this->NextEffect(pRequest); });
@@ -311,15 +321,18 @@ class CSPIFFSWebServer
 
         _server.on("/settings",              HTTP_POST, [this](AsyncWebServerRequest * pRequest)    { this->SetSettings(pRequest); });
 
-        // Extra-large files must be manually served like this per Issue #770 in AsyncWebServer lib
-        // As of now, though, the static files are small enough that the default serveStatic still works
-        //
-        //_server.serveStatic("/static/js/main.js", SPIFFS, "/static/js/main.js");
-        //ServeLargeStaticFile("/static/js/main.js", "text/javascript");
-        //ServeLargeStaticFile("/static/js/main.js.LICENSE.txt", "text/plain");
-        //ServeLargeStaticFile("/static/css/main.b4f33716.css", "text/css");
+        EmbeddedFile html_file(html_start, html_end, "text/html");
+        EmbeddedFile jsx_file(jsx_start, jsx_end, "application/javascript");
+        EmbeddedFile ico_file(ico_start, ico_end, "image/vnd.microsoft.icon");
 
-        _server.serveStatic("/", SPIFFS, "/", "public, max-age=86400").setDefaultFile("index.html");        // BUGBUG Fix lifetime to 86400 or something like that
+        debugI("Embedded html file size: %d", html_file.length);
+        debugI("Embedded jsx file size: %d", jsx_file.length);
+        debugI("Embedded ico file size: %d", ico_file.length);
+
+        ServeEmbeddedFile("/", html_file);
+        ServeEmbeddedFile("/index.html", html_file);
+        ServeEmbeddedFile("/main.jsx", jsx_file);
+        ServeEmbeddedFile("/favicon.ico", ico_file);
 
         _server.onNotFound([](AsyncWebServerRequest *request) 
         {

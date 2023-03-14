@@ -64,6 +64,7 @@ struct AudioVariables
     unsigned long _cSamples    = 0U;                     // Total number of samples successfully collected
     int           _AudioFPS    = 0;                      // Framerate of the audio sampler
     int           _serialFPS   = 0;                      // How many serial packets are processed per second
+    uint          _msLastRemote= 0;                      // When the last Peak data came in from external (ie: WiFi)
 };
 
 #if !ENABLE_AUDIO
@@ -110,14 +111,15 @@ struct AudioVariables
     #define VUDAMPENMIN 1 // How slowly VU min creeps up to test noise floor
     #define VUDAMPENMAX 1 // How slowly VU max drops down to test noise ceiling
 
-
     // PeakData
     //
     // Keeps track of a set of peaks for a sample pass
 
     class PeakData
     {
+
     protected:
+
         static float _Min[NUM_BANDS];
         static float _Max[NUM_BANDS];
         static float _Last[NUM_BANDS];
@@ -130,7 +132,7 @@ struct AudioVariables
         {
             const bool bScaleAllBands = true;
             _allBandsMax = 0.0f;
-            for (int band = 0; band < 4; band++)
+            for (int band = 0; band < NUM_BANDS; band++)
             {
                 // If new peak is above the max, it becomes the new max.  Otherwise we drift
                 // towards it using a weighted average.
@@ -180,6 +182,9 @@ struct AudioVariables
         }
 
     public:
+
+        typedef enum { PCREMOTE, M5 } MicrophoneType;
+
         PeakData()
         {
             for (int i = 0; i < NUM_BANDS; i++)
@@ -210,6 +215,32 @@ struct AudioVariables
             return _Level[n];
         }
 
+        double GetBandScalar(MicrophoneType mic, int i)
+        {
+            switch (mic)
+            {
+                case PCREMOTE:
+                {
+                    static const double Scalars12[12] = {1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0};
+                    double result = (NUM_BANDS == 12) ? Scalars12[i] : mapDouble(i, 0, NUM_BANDS, 0.75, 1.0);
+                    return result;
+                }
+                default:                
+                {
+                    static const double Scalars12[12] = {0.25, 0.70, 1.2, 1.1, 0.70, 0.5, 0.47, 0.68, 0.77, 0.75, 0.5, 0.72};
+                    double result = (NUM_BANDS == 12) ? Scalars12[i] : mapDouble(i, 0, NUM_BANDS, 0.75, 1.0);
+                    return result;
+                }
+            }
+        }
+
+        void ApplyScalars(MicrophoneType mic)
+        {
+            for (int i = 0; i < NUM_BANDS; i++)
+            {
+                _Level[i] *= GetBandScalar(mic, i);
+            }
+        }
         float Ratio(std::size_t n) const
         {
             return _Ratio[n];
@@ -244,21 +275,21 @@ struct AudioVariables
         // school that you need to sample at doube the frequency you want to process, so 24000 is 12K
 
         const size_t SAMPLING_FREQUENCY = 24000;        
+        const size_t _sampling_period_us = PERIOD_FROM_FREQ(SAMPLING_FREQUENCY);
 
-        size_t _MaxSamples;        // Number of samples we will take, must be a power of 2
-        size_t _SamplingFrequency; // Sampling Frequency should be at least twice that of highest freq sampled
-        size_t _BandCount;
-        float * _vPeaks;
-        int _InputPin;
-        static float _oldVU;
-        static float _oldPeakVU;
-        static float _oldMinVU;
-        int _cutOffsBand[NUM_BANDS];
-
-        unsigned int _sampling_period_us = PERIOD_FROM_FREQ(SAMPLING_FREQUENCY);
-        uint8_t _inputPin; // Which hardware pin do we actually sample audio from?
-
-        PeakData g_Peaks;
+        size_t     _MaxSamples;        // Number of samples we will take, must be a power of 2
+        size_t     _SamplingFrequency; // Sampling Frequency should be at least twice that of highest freq sampled
+        size_t     _BandCount;
+        float *    _vPeaks;
+        int        _InputPin;
+        int        _cutOffsBand[NUM_BANDS];
+        float      _oldVU;
+        float      _oldPeakVU;
+        float      _oldMinVU;
+        uint8_t    _inputPin; // Which hardware pin do we actually sample audio from?
+        PeakData   _Peaks;
+        
+        PeakData::MicrophoneType _MicMode = PeakData::M5;
 
         // BucketFrequency
         //
@@ -272,14 +303,6 @@ struct AudioVariables
 
             int iOffset = iBucket - 2;
             return iOffset * (_SamplingFrequency / 2) / (_MaxSamples / 2);
-        }
-
-        double GetBandScalar(int i)
-        { //  Red   Org   Yel  Grn  Cyn   Blu  Prp   Org   Yel   Grn   Cyn  Blue
-            static const double Scalars12[12] = {0.25, 0.70, 1.2, 1.1, 0.70, 0.5, 0.47, 0.68, 0.77, 0.75, 0.5, 0.72};
-
-            double result = (NUM_BANDS == 12) ? Scalars12[i] : mapDouble(i, 0, _BandCount, 0.75, 1.0);
-            return result;
         }
 
         volatile int _cSamples;
@@ -310,7 +333,11 @@ struct AudioVariables
         void FFT()
         {
             arduinoFFT _FFT(_vReal, _vImaginary, _MaxSamples, _SamplingFrequency);
+            _FFT.DCRemoval();
+            _FFT.Windowing(FFT_WIN_TYP_FLT_TOP, FFT_FORWARD);
             _FFT.Compute(FFT_FORWARD);
+            _FFT.ComplexToMagnitude();
+            _FFT.MajorPeak();
         }
 
         inline bool IsBufferFull() const __attribute__((always_inline))
@@ -401,7 +428,7 @@ struct AudioVariables
 
         void FillBufferI2S()
         {
-            int16_t byteBuffer[MAX_SAMPLES];
+            int16_t sampleBuffer[MAX_SAMPLES];
 
             if (IsBufferFull())
             {
@@ -411,29 +438,54 @@ struct AudioVariables
             size_t bytesRead = 0;
 
             #if M5STICKC || M5STICKCPLUS
-                // REVIEW(davepl) - If I do not indicate one less byte of length, i2s_read will corrupt the heap
-                ESP_ERROR_CHECK(i2s_read(I2S_NUM_0, (void *)byteBuffer, sizeof(byteBuffer), &bytesRead, (100 / portTICK_RATE_MS)));
+                ESP_ERROR_CHECK(i2s_read(I2S_NUM_0, (void *)sampleBuffer, sizeof(sampleBuffer), &bytesRead, (100 / portTICK_RATE_MS)));
             #else
                 ESP_ERROR_CHECK(i2s_adc_enable(EXAMPLE_I2S_NUM));
-                ESP_ERROR_CHECK(i2s_read(EXAMPLE_I2S_NUM, (void *)byteBuffer, sizeof(byteBuffer), &bytesRead, portMAX_DELAY));
+                ESP_ERROR_CHECK(i2s_read(EXAMPLE_I2S_NUM, (void *)sampleBuffer, sizeof(sampleBuffer), &bytesRead, portMAX_DELAY));
                 ESP_ERROR_CHECK(i2s_adc_disable(EXAMPLE_I2S_NUM));
             #endif
 
             _cSamples = _MaxSamples;
-            if (bytesRead != sizeof(byteBuffer))
+            if (bytesRead != sizeof(sampleBuffer))
             {
-                debugW("Could only read %u bytes of %u in FillBufferI2S()\n", bytesRead, sizeof(byteBuffer));
+                debugW("Could only read %u bytes of %u in FillBufferI2S()\n", bytesRead, sizeof(sampleBuffer));
                 return;
             }
 
-            for (int i = 0; i < ARRAYSIZE(byteBuffer); i++)
+            for (int i = 0; i < ARRAYSIZE(sampleBuffer); i++)
             {
                 #if M5STICKC || M5STICKCPLUS
-                    _vReal[i] = ::map(byteBuffer[i], INT16_MIN, INT16_MAX, 0, MAX_VU);
+                    _vReal[i] = ::map(sampleBuffer[i], INT16_MIN, INT16_MAX, 0, MAX_VU);
                 #else
-                    _vReal[i] = byteBuffer[i];
+                    _vReal[i] = sampleBuffer[i];
                 #endif
             }
+        }
+
+        void UpdateVU(double newval)
+        {
+            if (newval > _oldVU)
+                _VU = newval;
+            else
+                _VU = (_oldVU * VUDAMPEN + newval) / (VUDAMPEN + 1);
+
+            _oldVU = _VU;
+
+            // If we crest above the max VU, update the max VU up to that.  Otherwise drift it towards the new value.
+
+            if (_VU > _PeakVU)
+                _PeakVU = _VU;
+            else
+                _PeakVU = (_oldPeakVU * VUDAMPENMAX + _VU) / (VUDAMPENMAX + 1);
+            _oldPeakVU = _PeakVU;
+
+            // If we dip below the min VU, update the min VU down to that.  Otherwise drift it towards the new value.
+
+            if (_VU < _MinVU)
+                _MinVU = _VU;
+            else
+                _MinVU = (_oldMinVU * VUDAMPENMIN + _VU) / (VUDAMPENMIN + 1);
+            _oldMinVU = _MinVU;        
         }
 
         // SampleBuffer::ProcessPeaks
@@ -473,8 +525,6 @@ struct AudioVariables
                 }
                 if (iBand > _BandCount - 1)
                     iBand = _BandCount - 1;
-
-                _vReal[i] *= GetBandScalar(iBand);
 
                 if (_vReal[i] > NOISE_CUTOFF)
                 {
@@ -521,30 +571,7 @@ struct AudioVariables
             float newval = averageSum / (_MaxSamples / 2 - 2);
             debugV("AverageSumL: %f", averageSum);
 
-            if (newval > _oldVU)
-                _VU = newval;
-            else
-                _VU = (_oldVU * VUDAMPEN + newval) / (VUDAMPEN + 1);
-
-            _oldVU = _VU;
-
-            debugV("PEAK: %lf, VU: %f", samplesPeak, _VU);
-
-            // If we crest above the max VU, update the max VU up to that.  Otherwise drift it towards the new value.
-
-            if (_VU > _PeakVU)
-                _PeakVU = _VU;
-            else
-                _PeakVU = (_oldPeakVU * VUDAMPENMAX + _VU) / (VUDAMPENMAX + 1);
-            _oldPeakVU = _PeakVU;
-
-            // If we dip below the min VU, update the min VU down to that.  Otherwise drift it towards the new value.
-
-            if (_VU < _MinVU)
-                _MinVU = _VU;
-            else
-                _MinVU = (_oldMinVU * VUDAMPENMIN + _VU) / (VUDAMPENMIN + 1);
-            _oldMinVU = _MinVU;
+            UpdateVU(newval);
 
             EVERY_N_MILLISECONDS(100)
             {
@@ -552,7 +579,8 @@ struct AudioVariables
                 debugV("Audio Data -- Sum: %0.2f, _MinVU: %f0.2, _PeakVU: %f0.2, _VU: %f, Peak0: %f, Peak1: %f, Peak2: %f, Peak3: %f", averageSum, _MinVU, _PeakVU, _VU, peaks[0], peaks[1], peaks[2], peaks[3]);
             }
 
-            return GetBandPeaks();
+            PeakData peaks = GetBandPeaks();
+            return peaks;
         }
 
         // 
@@ -575,7 +603,7 @@ struct AudioVariables
 
         PeakData GetSamplePassPeaks()
         {
-            return g_Peaks;
+            return _Peaks;
         }
 
         // BandCutoffTable
@@ -608,9 +636,9 @@ struct AudioVariables
             _MaxSamples = MAX_SAMPLES;
             _InputPin = INPUT_PIN;
 
-            _vReal = (double *)malloc(_MaxSamples * sizeof(_vReal[0]));
+            _vReal      = (double *)malloc(_MaxSamples * sizeof(_vReal[0]));
             _vImaginary = (double *)malloc(_MaxSamples * sizeof(_vImaginary[0]));
-            _vPeaks = (float *)malloc(_BandCount * sizeof(_vPeaks[0]));
+            _vPeaks     = (float *) malloc(_BandCount * sizeof(_vPeaks[0]));
 
             _oldVU = 0.0f;
             _oldPeakVU = 0.0f;
@@ -626,6 +654,11 @@ struct AudioVariables
             free(_vReal);
             free(_vImaginary);
             free(_vPeaks);
+        }
+       
+        PeakData::MicrophoneType MicMode()
+        {
+            return _MicMode;
         }
 
         unsigned long g_lastPeak1Time[NUM_BANDS] = { 0 } ;
@@ -673,33 +706,57 @@ struct AudioVariables
         {
             for (int i = 0; i < NUM_BANDS; i++)
             {
-                if (g_Peaks[i] > g_peak1Decay[i])
+                if (_Peaks[i] > g_peak1Decay[i])
                 {
-                    g_peak1Decay[i] = g_Peaks[i];
+                    g_peak1Decay[i] = _Peaks[i];
                     g_lastPeak1Time[i] = millis();
                 }
-                if (g_Peaks[i] > g_peak2Decay[i])
+                if (_Peaks[i] > g_peak2Decay[i])
                 {
-                    g_peak2Decay[i] = g_Peaks[i];
+                    g_peak2Decay[i] = _Peaks[i];
                 }
             }
         }
 
         inline PeakData GetPeakData()
         {
-            return g_Peaks;
+            return _Peaks;
         }
+        
+        inline void SetPeakData(const PeakData & peaks)
+        {
+            debugV("Manually setting peaks!");
+            Serial.print("*");
+            _msLastRemote = millis();
+            _Peaks = peaks;
+        }
+        
         //
         // RunSamplerPass
         //
 
         inline void RunSamplerPass()
         {
-            Reset();
-            FillBufferI2S();
-            FFT();
+            if (millis() - _msLastRemote > AUDIO_PEAK_REMOTE_TIMEOUT)
+            {
+                Reset();
+                FillBufferI2S();
+                FFT();
+                _Peaks = ProcessPeaks();
+                _Peaks.ApplyScalars(PeakData::M5);
+                _MicMode = PeakData::M5;
+            }
+            else
+            {
+                // Calculate an average VU from the band data
+                float sum = 0.0f;
+                for (int i = 0; i < NUM_BANDS; i++)
+                    sum += _Peaks[i];
 
-            g_Peaks = ProcessPeaks();
+                // Scale it so that its not always in the top red
+                _MicMode = PeakData::PCREMOTE;
+                UpdateVU(0.25 * MAX_VU * sum / NUM_BANDS);
+            }
         }
     };
 #endif

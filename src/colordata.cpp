@@ -61,8 +61,8 @@ const CRGBPalette256 vuPaletteSeahawks = gpSeahawks;
 DEFINE_GRADIENT_PALETTE( vu_gpBlue ) 
 {
       0,     0,   0,   4,   // near black green
-     64,     0,   0, 255,   // green
-    128,   255, 255,   0,   // yellow
+     64,     0,   0, 255,   // blue
+    128,     0, 255,   0,   // green
     192,   255,   0,   0,   // red
     255,   255,   0,   0    // red
 };
@@ -121,3 +121,18 @@ const uint8_t GFXBase::gamma6[] =
     0xc7, 0xcf, 0xd6, 0xde, 0xe6, 0xee, 0xf7, 0xff
 };
 
+extern const TProgmemRGBPalette16 BlueHeatColors_p FL_PROGMEM =
+{
+    0x000000,
+    0x000033, 0x000066, 0x000099, 0x0000CC, 0x0000FF,
+    0x0033FF, 0x0066FF, 0x0099FF, 0x00CCFF, 0x00FFFF,
+    0x33FFFF, 0x66FFFF, 0x99FFFF, 0xCCFFFF, 0xFFFFFF
+};
+
+extern const TProgmemRGBPalette16 GreenHeatColors_p FL_PROGMEM =
+{
+    0x000000,
+    0x003300, 0x006600, 0x009900, 0x00CC00, 0x00FF00,
+    0x33FF00, 0x66FF00, 0x99FF00, 0xCCFF00, 0xFFFF00,
+    0xFFFF33, 0xFFFF66, 0xFFFF99, 0xFFFFCC, 0xFFFFFF
+};

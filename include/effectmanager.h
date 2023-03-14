@@ -55,7 +55,7 @@ extern uint8_t g_Fader;
 void InitEffectsManager();
 std::shared_ptr<LEDStripEffect> GetSpectrumAnalyzer(CRGB color);
 std::shared_ptr<LEDStripEffect> GetSpectrumAnalyzer(CRGB color, CRGB color2);
-extern DRAM_ATTR std::shared_ptr<GFXBase> g_pDevices[NUM_CHANNELS];
+extern DRAM_ATTR std::shared_ptr<GFXBase> g_ptrDevices[NUM_CHANNELS];
 // EffectManager
 //
 // Handles keeping track of the effects, which one is active, asking it to draw, etc.
@@ -76,7 +76,7 @@ class EffectManager
 
     std::unique_ptr<bool[]> _abEffectEnabled;
     std::shared_ptr<GFXTYPE> * _gfx;
-    std::shared_ptr<LEDStripEffect> _pRemoteEffect = nullptr;
+    std::shared_ptr<LEDStripEffect> _ptrRemoteEffect = nullptr;
 
 public:
     static const uint csFadeButtonSpeed = 15 * 1000;
@@ -136,16 +136,16 @@ public:
     }
 
 #if ATOMLIGHT
-    static const uint FireEffectIndex = 2; // Index of the fire effect in the AllEffects table (BUGBUG hardcoded)
-    static const uint VUEffectIndex = 6;   // Index of the fire effect in the AllEffects table (BUGBUG hardcoded)
+    static const uint FireEffectIndex = 2; // Index of the fire effect in the g_apEffects table (BUGBUG hardcoded)
+    static const uint VUEffectIndex = 6;   // Index of the fire effect in the g_apEffects table (BUGBUG hardcoded)
 #elif FANSET
-    static const uint FireEffectIndex = 1; // Index of the fire effect in the AllEffects table (BUGBUG hardcoded)
+    static const uint FireEffectIndex = 1; // Index of the fire effect in the g_apEffects table (BUGBUG hardcoded)
 #elif BROOKLYNROOM
-    static const uint FireEffectIndex = 2; // Index of the fire effect in the AllEffects table (BUGBUG hardcoded)
-    static const uint VUEffectIndex = 6;   // Index of the fire effect in the AllEffects table (BUGBUG hardcoded)
+    static const uint FireEffectIndex = 2; // Index of the fire effect in the g_apEffects table (BUGBUG hardcoded)
+    static const uint VUEffectIndex = 6;   // Index of the fire effect in the g_apEffects table (BUGBUG hardcoded)
 #else
-    static const uint FireEffectIndex = 0; // Index of the fire effect in the AllEffects table (BUGBUG hardcoded)
-    static const uint VUEffectIndex = 0;   // Index of the fire effect in the AllEffects table (BUGBUG hardcoded)
+    static const uint FireEffectIndex = 0; // Index of the fire effect in the g_apEffects table (BUGBUG hardcoded)
+    static const uint VUEffectIndex = 0;   // Index of the fire effect in the g_apEffects table (BUGBUG hardcoded)
 #endif
 
     // SetGlobalColor
@@ -160,7 +160,7 @@ public:
         CRGB oldColor = lastManualColor;
         lastManualColor = color;
 
-        #if (USEMATRIX)
+        #if (USE_MATRIX)
                 GFXBase *pMatrix = (*this)[0].get();
                 pMatrix->setPalette(CRGBPalette16(oldColor, color));
                 pMatrix->PausePalette(true);
@@ -181,9 +181,9 @@ public:
                 effect = std::make_shared<PaletteFlameEffect>("Custom Fire", CRGBPalette256(CRGB::Black, color, CRGB::Yellow, CRGB::White), NUM_LEDS, 1, 8, 50, 1, 24, true, false);
             #endif
 
-            if (effect->Init(g_pDevices))
+            if (effect->Init(g_aptrDevices))
             {
-                _pRemoteEffect = effect;
+                _ptrRemoteEffect = effect;
                 StartEffect();
             }
         #endif
@@ -191,9 +191,9 @@ public:
 
     void ClearRemoteColor()
     {
-        _pRemoteEffect = nullptr;
+        _ptrRemoteEffect = nullptr;
 
-        #if (USEMATRIX)
+        #if (USE_MATRIX)
             LEDMatrixGFX *pMatrix = (LEDMatrixGFX *)(*this)[0].get();
             pMatrix->PausePalette(false);
         #endif
@@ -201,14 +201,17 @@ public:
 
     void StartEffect()
     {
-        #if USEMATRIX
+        #if USE_MATRIX
             LEDMatrixGFX *pMatrix = (LEDMatrixGFX *)(*this)[0].get();
             pMatrix->SetCaption(_ppEffects[_iCurrentEffect]->FriendlyName(), 3000);
             pMatrix->setLeds(LEDMatrixGFX::GetMatrixBackBuffer());
         #endif
 
-        if (_pRemoteEffect)
-            _pRemoteEffect->Start();
+        // If there's a temporary effect override from the remote control active, we start that, else
+        // we start the current regular effect
+        
+        if (_ptrRemoteEffect)
+            _ptrRemoteEffect->Start();
         else
             _ppEffects[_iCurrentEffect]->Start();
 
@@ -309,8 +312,8 @@ public:
 
     const String & GetCurrentEffectName() const
     {
-        if (_pRemoteEffect)
-            return _pRemoteEffect->FriendlyName();
+        if (_ptrRemoteEffect)
+            return _ptrRemoteEffect->FriendlyName();
 
         return _ppEffects[_iCurrentEffect]->FriendlyName();
     }
@@ -434,14 +437,10 @@ public:
 
         // If a remote control effect is set, we draw that, otherwise we draw the regular effect
 
-        if (_pRemoteEffect)
-        {
-            _pRemoteEffect->Draw();
-        }
+        if (_ptrRemoteEffect)
+            _ptrRemoteEffect->Draw();
         else
-        {
             _ppEffects[_iCurrentEffect]->Draw(); // Draw the currently active effect
-        }
 
         // If we do indeed have multiple effects (BUGBUG what if only a single enabled?) then we
         // fade in and out at the appropriate time based on the time remaining/used by the effect
@@ -476,4 +475,4 @@ public:
     }
 };
 
-extern std::unique_ptr<EffectManager<GFXBase>> g_pEffectManager;
+extern std::unique_ptr<EffectManager<GFXBase>> g_aptrEffectManager;

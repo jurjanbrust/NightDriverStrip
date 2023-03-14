@@ -37,7 +37,7 @@
 
 extern AppTime  g_AppTime;
 extern DRAM_ATTR uint8_t giInfoPage;                   // Which page of the display is being shown
-extern DRAM_ATTR std::unique_ptr<EffectManager<GFXBase>> g_pEffectManager;
+extern DRAM_ATTR std::unique_ptr<EffectManager<GFXBase>> g_aptrEffectManager;
 
 #if ENABLE_AUDIO
 
@@ -51,7 +51,7 @@ class InsulatorSpectrumEffect : public LEDStripEffect, public BeatEffectBase, pu
 
     InsulatorSpectrumEffect(const String & strName, const CRGBPalette16 & Palette) : 
         LEDStripEffect(strName),
-        BeatEffectBase(0.25, 1.75, .25),
+        BeatEffectBase(1.50, 0.25),
         ParticleSystem<SpinningPaletteRingParticle>(),
         _Palette(Palette)
     {
@@ -103,6 +103,9 @@ class VUMeterEffect
 
     void DrawVUPixels(GFXBase * pGFXChannel, int i, int yVU, int fadeBy = 0, const CRGBPalette256 * pPalette = nullptr)
     {
+        if (g_Analyzer.MicMode() == PeakData::PCREMOTE)
+            pPalette = &vuPaletteBlue;
+
         int xHalf = pGFXChannel->width()/2;
         pGFXChannel->setPixel(xHalf-i-1, yVU, ColorFromPalette(pPalette ? *pPalette : vu_gpGreen,  i*(256/xHalf)).fadeToBlackBy(fadeBy));
         pGFXChannel->setPixel(xHalf+i,   yVU, ColorFromPalette(pPalette ? *pPalette : vu_gpGreen, i*(256/xHalf)).fadeToBlackBy(fadeBy));
@@ -391,7 +394,7 @@ class WaveformEffect : public LEDStripEffect
         v = std::min(v, 1.0);
         v = std::max(v, 0.0);
 
-        auto g = g_pEffectManager->graphics();
+        auto g = g_aptrEffectManager->graphics();
 
         int yTop = (MATRIX_HEIGHT / 2) - v * (MATRIX_HEIGHT  / 2);
         int yBottom = (MATRIX_HEIGHT / 2) + v * (MATRIX_HEIGHT / 2) ;
@@ -426,9 +429,9 @@ class WaveformEffect : public LEDStripEffect
 
     virtual void Draw()
     {
-        auto g = g_pEffectManager->graphics();
+        auto g = g_aptrEffectManager->graphics();
         
-        int top = g_pEffectManager->IsVUVisible() ? 1 : 0;
+        int top = g_aptrEffectManager->IsVUVisible() ? 1 : 0;
         g->MoveInwardX(top);                            // Start on Y=1 so we don't shift the VU meter
         DrawSpike(63, g_Analyzer._VURatio/2.0);
         DrawSpike(0, g_Analyzer._VURatio/2.0);
@@ -452,9 +455,9 @@ class GhostWave : public WaveformEffect
 
     virtual void Draw()
     {
-        auto g = g_pEffectManager->graphics();
+        auto g = g_aptrEffectManager->graphics();
 
-        int top = g_pEffectManager->IsVUVisible() ? 1 : 0;
+        int top = g_aptrEffectManager->IsVUVisible() ? 1 : 0;
 
         g->DimAll(250 - _fade * g_Analyzer._VURatio);
         g->MoveOutwardsX(top);
