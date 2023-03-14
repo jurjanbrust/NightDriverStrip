@@ -719,15 +719,17 @@ extern RemoteDebug Debug;           // Let everyone in the project know about it
     #define WAIT_FOR_WIFI           1   // Hold in setup until we have WiFi - for strips without effects
     #define TIME_BEFORE_LOCAL       5   // How many seconds before the lamp times out and shows local content
 
+    #define JURJAN          505
+    #define CARMEN          597
     #define NUM_CHANNELS    1
-    #define MATRIX_WIDTH    (600)       // jurjan=505, carmen=600
+    #define MATRIX_WIDTH    (JURJAN)       // jurjan=505, carmen=597
     #define MATRIX_HEIGHT   1
     #define NUM_LEDS        (MATRIX_WIDTH * MATRIX_HEIGHT)
     #define ENABLE_REMOTE   0                     // IR Remote Control
     #define ENABLE_AUDIO    1                     // Listen for audio from the microphone and process it
     #define LED_PIN0        14
 
-    #define POWER_LIMIT_MW (NUM_LEDS/32 * 1000)        // Assumes 32mA per LED.  Make sure you have appropriate power!
+    #define POWER_LIMIT_MW (NUM_LEDS/32 * 600)        // Assumes 32mA per LED.  Make sure you have appropriate power!
 
     #define DEFAULT_EFFECT_INTERVAL     (1000*20*1000)    // jjb: added * 1000 to extend 
 

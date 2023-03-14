@@ -706,6 +706,15 @@ DRAM_ATTR LEDStripEffect *g_apEffects[] =
         new ColorFillEffect(CRGB::Green,1),
         new ColorFillEffect(CRGB::Blue,1),
         new ColorFillEffect(CRGB::Purple,1),
+        new StarryNightEffect<QuietStar>("Red Twinkle Stars", RedColors_p, 1.0, 1, LINEARBLEND, 2.0, 0.0, STARRYNIGHT_MUSICFACTOR),                             // Red Twinkle
+        new StarryNightEffect<Star>("Lava Stars", LavaColors_p, STARRYNIGHT_PROBABILITY, 1, LINEARBLEND, 2.0, 0.0, STARRYNIGHT_MUSICFACTOR),                    // Lava Stars
+        new StarryNightEffect<QuietStar>("Rainbow Twinkle Stars", RainbowColors_p, STARRYNIGHT_PROBABILITY, 1, LINEARBLEND, 2.0, 0.0, STARRYNIGHT_MUSICFACTOR), // Rainbow Twinkle
+        new ClassicFireEffect(true),
+        new ClassicFireEffect(false, false, 3),
+        new FireFanEffect(GreenHeatColors_p, NUM_LEDS, 3, 7, 400, 2, NUM_LEDS / 2, Sequential, false, true),
+        new FireFanEffect(GreenHeatColors_p, NUM_LEDS, 3, 8, 600, 2, NUM_LEDS / 2, Sequential, false, true),
+        new FireFanEffect(GreenHeatColors_p, NUM_LEDS, 2, 10, 800, 2, NUM_LEDS / 2, Sequential, true, false),
+        new FireFanEffect(GreenHeatColors_p, NUM_LEDS, 1, 12, 1000, 2, NUM_LEDS / 2, Sequential, true, false),
         //new ColorBeatOverRed("ColorBeatOverRed"),
         //new ColorBeatWithFlash("ColorBeatWithFlash"),
         new ColorCycleEffect(LeftRight),
@@ -713,6 +722,7 @@ DRAM_ATTR LEDStripEffect *g_apEffects[] =
         new MeteorEffect(),                     // mooi
         new FanBeatEffect("FanBeat"),           // random dots 
         new LaserLineEffect(500, 20),
+
 
 #elif HOODORNAMENT
 
