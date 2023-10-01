@@ -719,10 +719,10 @@ extern RemoteDebug Debug;           // Let everyone in the project know about it
     #define WAIT_FOR_WIFI           1   // Hold in setup until we have WiFi - for strips without effects
     #define TIME_BEFORE_LOCAL       5   // How many seconds before the lamp times out and shows local content
 
-    #define JURJAN          550
+    #define JURJAN          555
     #define CARMEN          597
     #define NUM_CHANNELS    1
-    #define MATRIX_WIDTH    (JURJAN)       // jurjan=550, carmen=597
+    #define MATRIX_WIDTH    (JURJAN)       // jurjan=555, carmen=597
     #define MATRIX_HEIGHT   1
     #define NUM_LEDS        (MATRIX_WIDTH * MATRIX_HEIGHT)
     #define ENABLE_REMOTE   0                     // IR Remote Control
