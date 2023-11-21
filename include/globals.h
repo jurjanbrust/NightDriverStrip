@@ -721,8 +721,9 @@ extern RemoteDebug Debug;           // Let everyone in the project know about it
 
     #define JURJAN          563
     #define CARMEN          597
+    #define KAST            72
     #define NUM_CHANNELS    1
-    #define MATRIX_WIDTH    (JURJAN)       // jurjan=555, carmen=597
+    #define MATRIX_WIDTH    (KAST)       // jurjan=555, carmen=597
     #define MATRIX_HEIGHT   1
     #define NUM_LEDS        (MATRIX_WIDTH * MATRIX_HEIGHT)
     #define ENABLE_REMOTE   0                     // IR Remote Control
